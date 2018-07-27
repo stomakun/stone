@@ -4,7 +4,7 @@ from typing import Dict, Text, Union, List, Optional, Tuple
 
 from stone.ir import Api, ApiNamespace, ApiRoute, DataType, is_primitive_type, is_boolean_type, is_list_type, \
     is_numeric_type, is_string_type, is_void_type, is_timestamp_type, is_nullable_type, is_struct_type, \
-    UserDefined, is_union_type, is_user_defined_type
+    UserDefined, is_union_type, is_user_defined_type, Struct, Union as StoneUnion
 from stone.backend import CodeBackend
 from stone.backends.swagger_objects import Swagger, Info, Paths, PathItem, Operation, Schema, Reference, \
     Responses, Response, Parameter, Definitions
@@ -14,6 +14,12 @@ DEFAULT_SPEC_VERSION = '1.0.0'
 DEFAULT_MEDIA_TYPE = 'application/json'
 
 
+class Context(object):
+
+    def __init__(self):
+        self.schemas = {}   # type: Dict[Text, Schema]
+
+
 class SwaggerBackend(CodeBackend):
 
     def generate(self, api):
@@ -21,14 +27,14 @@ class SwaggerBackend(CodeBackend):
         for namespace in api.namespaces.values():
             if len(namespace.routes) > 0:
                 with self.output_to_relative_path('{}.json'.format(namespace.name)):
-                    swagger = self._generate_swagger(namespace)
+                    swagger = self._generate_swagger(Context(), namespace)
                     self.emit_raw(json.dumps(swagger, default=lambda o: o.dict(), indent=2) + '\n')
 
-    def _generate_swagger(self, namespace):
-        # type: (ApiNamespace) -> Swagger
+    def _generate_swagger(self, ctx, namespace):
+        # type: (Context, ApiNamespace) -> Swagger
         info = self._generate_info(namespace)
-        paths = self._generate_paths(namespace)
-        definitions = self._generate_definitions(namespace)
+        paths = self._generate_paths(ctx, namespace)
+        definitions = self._generate_definitions(ctx)
         mimes = [DEFAULT_MEDIA_TYPE]
         host = 'api.dropboxapi.com'
         base_path = '/2/' + namespace.name
@@ -42,56 +48,67 @@ class SwaggerBackend(CodeBackend):
         info = Info(title, DEFAULT_SPEC_VERSION, description=description)
         return info
 
-    def _generate_paths(self, namespace):
-        # type: (ApiNamespace) -> Paths
+    def _generate_paths(self, ctx, namespace):
+        # type: (Context, ApiNamespace) -> Paths
         paths = {
-            '/' + route.name: self._generate_path_item(route)
+            '/' + route.name: self._generate_path_item(ctx, route)
             for route in namespace.routes
         }
         return Paths(paths)
 
-    def _generate_path_item(self, route):
-        # type: (ApiRoute) -> PathItem
-        post = self._generate_operation(route)
+    def _generate_path_item(self, ctx, route):
+        # type: (Context, ApiRoute) -> PathItem
+        post = self._generate_operation(ctx, route)
         path_item = PathItem(post=post)
         return path_item
 
-    def _generate_operation(self, route):
-        # type: (ApiRoute) -> Operation
-        summary, description = self._split_doc(route.doc) if route.doc else (None, None)
-        parameters = self._generate_parameters(route)
-        responses = self._generate_responses(route)
+    def _generate_operation(self, ctx, route):
+        # type: (Context, ApiRoute) -> Operation
+        summary, description = self._split_doc(route.doc) if route.doc else ('', None)
+        summary = route.name + ': ' + summary
+        parameters = self._generate_parameters(ctx, route)
+        responses = self._generate_responses(ctx, route)
         operation_id = route.name.replace('/', '-')
         operation = Operation(responses, summary=summary, description=description, parameters=parameters, operationId=operation_id)
         return operation
 
-    def _generate_parameters(self, route):
-        # type: (ApiRoute) -> Optional[List[Parameter]]
-        schema = self._generate_schema(route.arg_data_type)
+    def _generate_parameters(self, ctx, route):
+        # type: (Context, ApiRoute) -> Optional[List[Parameter]]
+        schema = self._generate_for_datatype(ctx, route.arg_data_type)
         parameter = Parameter('body', 'body', schema=schema)
         # This is how I added the header for admins to assume users.
         # team_member_parameter = Parameter('Dropbox-API-Select-User', inParam='header', type='string')
         # return [parameter, team_member_parameter]
         return [parameter]
 
-    def _generate_responses(self, route):
-        # type: (ApiRoute) -> Responses
-        description = ''
-        default_schema = self._generate_schema(route.error_data_type)
-        default_response = Response(description, schema=default_schema)
-        ok_schema = self._generate_schema(route.result_data_type)
-        ok_response = Response(description, schema=ok_schema)
+    def _generate_for_datatype(self, ctx, data_type):
+        # type: (Context, DataType) -> Union[Schema, Reference]
+        if is_primitive_type(data_type):
+            schema = self._generate_primitive_type_schema(data_type)
+        elif is_nullable_type(data_type):
+            schema = self._generate_for_datatype(ctx, data_type.data_type)
+        elif is_list_type(data_type):
+            schema = Schema(type='array', items=self._generate_for_datatype(ctx, data_type.data_type))
+        else:
+            assert is_user_defined_type(data_type), "unknown field data_type %s" % data_type
+            if data_type.name not in ctx.schemas:
+                ctx.schemas[data_type.name] = self._generate_user_defined_schema(ctx, data_type)
+            schema = self._generate_reference(data_type)
+        return schema
+
+    def _generate_responses(self, ctx, route):
+        # type: (Context, ApiRoute) -> Responses
+        default_schema = self._generate_for_datatype(ctx, route.error_data_type)
+        default_response = Response('Error', schema=default_schema)
+        ok_schema = self._generate_for_datatype(ctx, route.result_data_type)
+        ok_response = Response('Success', schema=ok_schema)
         status_codes = {'200': ok_response}
         responses = Responses(default=default_response, statusCodes=status_codes)
         return responses
 
-    def _generate_definitions(self, namespace):
-        # type: (ApiNamespace) -> Definitions
-        schemas = {}  # type: Dict[Text, Union[Schema, Reference]]
-        for current in self._get_all_namespaces(namespace):
-            schema = self._generate_schemas(current)
-            schemas.update(schema)
-        definitions = Definitions(schemas=schemas)
+    def _generate_definitions(self, ctx):
+        # type: (Context) -> Definitions
+        definitions = Definitions(schemas=ctx.schemas)
         return definitions
 
     def _get_all_namespaces(self, namespace):
@@ -106,75 +123,45 @@ class SwaggerBackend(CodeBackend):
                     stack.append(imported)
         return list(namespaces.values())
 
-    def _generate_schemas(self, namespace):
-        # type: (ApiNamespace) -> Dict[Text, Union[Schema, Reference]]
-        schemas = {}  # type: Dict[Text, Union[Schema, Reference]]
-        for data_type in namespace.linearize_data_types():
-            name = data_type.name
-            schema = self._generate_user_defined_schema(data_type)
-            schemas[name] = schema
-        return schemas
-
-    def _generate_user_defined_schema(self, data_type):
-        # type: (UserDefined) -> Schema
+    def _generate_user_defined_schema(self, ctx, data_type):
+        # type: (Context, UserDefined) -> Schema
         if is_struct_type(data_type):
-            schema = self._generate_from_struct(data_type)
+            schema = self._generate_from_struct(ctx, data_type)
         elif is_union_type(data_type):
-            schema = self._generate_from_union(data_type)
+            schema = self._generate_from_union(ctx, data_type)
         else:
-            self.logger.warning("unknown user defined data_type %s" % data_type)
-            schema = None
+            assert False, "unknown user defined data_type %s" % data_type
         return schema
 
-    def _generate_from_union(self, data_type):
-        # type: (UserDefined) -> Schema
-        description = data_type.doc
+    def _generate_from_union(self, ctx, data_type):
+        # type: (Context, StoneUnion) -> Schema
         own_properties = {}  # type: Dict[Text, Union[Schema, Reference]]
+        description = data_type.doc or ''
         choices = []  # type: List[Text]
         for field in data_type.all_fields:
-            field_name = field.name
-            choices.append(field_name)
+            description += '\n%s: %s' % (field.name, field.doc)
+            choices.append(field.name)
             if is_void_type(field.data_type):
                 continue
-            field_description = field.doc
-            property = self._generate_schema(field.data_type, description=field_description)
-            own_properties[field_name] = property
-        own_properties['.tag'] = Schema(type='string', enum=choices, title='Union ' + data_type.name)
+            property = self._generate_for_datatype(ctx, field.data_type)
+            if isinstance(property, Schema):
+                property.description = field.doc
+            own_properties[field.name] = property
+        own_properties['.tag'] = Schema(type='string', enum=choices, title='Union type of ' + data_type.name)
         schema = Schema(type='object', properties=own_properties, description=description)
         return schema
 
-    def _generate_from_struct(self, data_type):
-        # type: (UserDefined) -> Schema
-        description = data_type.doc
+    def _generate_from_struct(self, ctx, data_type):
+        # type: (Context, Struct) -> Schema
         own_properties = {}  # type: Dict[Text, Union[Schema, Reference]]
+        description = data_type.doc or ''
         for field in data_type.all_fields:
-            field_name = field.name
-            field_description = field.doc
-            property = self._generate_schema(field.data_type, description=field_description)
-            own_properties[field_name] = property
+            description += '\n%s: %s' % (field.name, field.doc)
+            property = self._generate_for_datatype(ctx, field.data_type)
+            if isinstance(property, Schema):
+                property.description = field.doc
+            own_properties[field.name] = property
         schema = Schema(type='object', properties=own_properties, description=description)
-        # if data_type.parent_type is not None:
-        #     all_of = [self._generate_reference(data_type.parent_type), schema]
-        #     schema = Schema(allOf=all_of, description=description)
-        return schema
-
-    def _generate_schema(self, data_type, description=None, title=None):
-        # type: (DataType, Optional[Text], Optional[Text]) -> Union[Schema, Reference]
-        schema = None   # type: Optional[Union[Schema, Reference]]
-        if is_primitive_type(data_type):
-            schema = self._generate_primitive_type_schema(data_type)
-            schema.description = description
-            schema.title = title
-        elif is_list_type(data_type):
-            schema = Schema(type='array', items=self._generate_schema(data_type.data_type))
-            schema.description = description
-            schema.title = title
-        elif is_nullable_type(data_type):
-            schema = self._generate_schema(data_type.data_type, description, title)
-        elif is_user_defined_type(data_type):
-            schema = self._generate_reference(data_type)
-        else:
-            self.logger.warning("unknown field data_type %s" % data_type)
         return schema
 
     def _generate_primitive_type_schema(self, data_type):
@@ -204,8 +191,9 @@ class SwaggerBackend(CodeBackend):
 
     def _split_doc(self, doc):
         # type: (Text) -> Tuple[Text, Text]
-        lines = doc.splitlines()
-        summary = lines[0] if len(lines) > 0 else ''
-        summary = summary.rstrip(' ').rstrip('.')
-        description = '\n'.join(lines[1:]) if len(lines) > 1 else ''
-        return summary, description
+        pos = doc.find('. ')
+        if pos == -1:
+            pos = doc.find('.\n')
+        if pos == -1:
+            return doc, ''
+        return doc[:pos], doc[pos+2:]

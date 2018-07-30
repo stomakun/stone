@@ -1,0 +1,19 @@
+namespace rocks
+
+struct Rock
+    name            String
+    namespaces      List(String)
+    swagger         Swagger
+
+struct Swagger
+    info            Info
+    host            String?
+    base_path        String?
+    schemes         List(String)?
+    consumes        List(String)?
+    produces        List(String)?
+
+struct Info
+    title           String
+    description     String?
+    version         String

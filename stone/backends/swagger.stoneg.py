@@ -1,7 +1,10 @@
+import argparse
 import json
 
 from typing import Dict, Text, Union, List, Optional, Tuple
 
+from stone.backends.swagger_rsrc import stone_serializers
+from stone.backends.swagger_rsrc.rocks import Rock_validator, Rock, Info as RocksInfo
 from stone.ir import Api, ApiNamespace, ApiRoute, DataType, is_primitive_type, is_boolean_type, is_list_type, \
     is_numeric_type, is_string_type, is_void_type, is_timestamp_type, is_nullable_type, is_struct_type, \
     UserDefined, is_union_type, is_user_defined_type, Struct, Union as StoneUnion
@@ -10,65 +13,75 @@ from stone.backends.swagger_objects import Swagger, Info, Paths, PathItem, Opera
     Responses, Response, Parameter, Definitions
 
 SWAGGER_VERSION = '2.0'
-DEFAULT_SPEC_VERSION = '1.0.0'
-DEFAULT_MEDIA_TYPE = 'application/json'
+
+_cmdline_parser = argparse.ArgumentParser()
+_cmdline_parser.add_argument('-r', '--rock', required=True, help='Input rock file.')
 
 
 class Context(object):
 
-    def __init__(self):
+    def __init__(self, rock):
+        # type: (Rock) -> None
+        self.rock = rock
         self.schemas = {}   # type: Dict[Text, Schema]
 
 
 class SwaggerBackend(CodeBackend):
 
+    cmdline_parser = _cmdline_parser
+
     def generate(self, api):
         # type: (Api) -> None
-        for namespace in api.namespaces.values():
-            if len(namespace.routes) > 0:
-                with self.output_to_relative_path('{}.json'.format(namespace.name)):
-                    swagger = self._generate_swagger(Context(), namespace)
-                    self.emit_raw(json.dumps(swagger, default=lambda o: o.dict(), indent=2) + '\n')
+        with open(self.args.rock, 'r') as f:
+            rock = stone_serializers.json_decode(Rock_validator, f.read())
+        ctx = Context(rock)
+        all_paths = Paths({})
+        for namespace in rock.namespaces:
+            paths = self._generate_paths(ctx, api.namespaces[namespace])
+            all_paths.update(paths)
+        with self.output_to_relative_path(rock.name):
+            swagger = self._generate_swagger(ctx, all_paths)
+            self.emit_raw(json.dumps(swagger, default=lambda o: o.dict(), indent=2) + '\n')
 
-    def _generate_swagger(self, ctx, namespace):
-        # type: (Context, ApiNamespace) -> Swagger
-        info = self._generate_info(namespace)
-        paths = self._generate_paths(ctx, namespace)
+    def _generate_swagger(self, ctx, paths):
+        # type: (Context, Paths) -> Swagger
+        info = self._generate_info(ctx.rock.swagger.info)
+        paths = paths
         definitions = self._generate_definitions(ctx)
-        mimes = [DEFAULT_MEDIA_TYPE]
-        host = 'api.dropboxapi.com'
-        base_path = '/2/' + namespace.name
-        swagger = Swagger(SWAGGER_VERSION, info, paths, consumes=mimes, produces=mimes, definitions=definitions, host=host, basePath=base_path)
+        consumes = ctx.rock.swagger.consumes
+        produces = ctx.rock.swagger.produces
+        host = ctx.rock.swagger.host
+        base_path = ctx.rock.swagger.base_path
+        swagger = Swagger(SWAGGER_VERSION, info, paths, consumes=consumes, produces=produces, definitions=definitions,
+                          host=host, basePath=base_path)
         return swagger
 
-    def _generate_info(self, namespace):
-        # type: (ApiNamespace) -> Info
-        title = namespace.name
-        description = namespace.doc
-        info = Info(title, DEFAULT_SPEC_VERSION, description=description)
+    def _generate_info(self, info):
+        # type: (RocksInfo) -> Info
+        info = Info(info.title, info.version, description=info.description)
         return info
 
     def _generate_paths(self, ctx, namespace):
         # type: (Context, ApiNamespace) -> Paths
         paths = {
-            '/' + route.name: self._generate_path_item(ctx, route)
+            '/' + namespace.name + '/' + route.name: self._generate_path_item(ctx, route, namespace)
             for route in namespace.routes
         }
         return Paths(paths)
 
-    def _generate_path_item(self, ctx, route):
-        # type: (Context, ApiRoute) -> PathItem
-        post = self._generate_operation(ctx, route)
+    def _generate_path_item(self, ctx, route, namespace):
+        # type: (Context, ApiRoute, ApiNamespace) -> PathItem
+        post = self._generate_operation(ctx, route, namespace)
         path_item = PathItem(post=post)
         return path_item
 
-    def _generate_operation(self, ctx, route):
-        # type: (Context, ApiRoute) -> Operation
+    def _generate_operation(self, ctx, route, namespace):
+        # type: (Context, ApiRoute, ApiNamespace) -> Operation
         summary, description = self._split_doc(route.doc) if route.doc else ('', None)
         summary = route.name + ': ' + summary
         parameters = self._generate_parameters(ctx, route)
         responses = self._generate_responses(ctx, route)
-        operation_id = route.name.replace('/', '-')
+        operation_id = namespace.name + '-' + route.name.replace('/', '-')
         operation = Operation(responses, summary=summary, description=description, parameters=parameters, operationId=operation_id)
         return operation
 

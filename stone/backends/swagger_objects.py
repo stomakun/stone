@@ -99,6 +99,10 @@ class Paths(Serializable):
         super(Paths, self).__init__()
         self.__dict__.update(paths)
 
+    def update(self, paths):
+        # type: (Paths) -> None
+        self.__dict__.update(paths.__dict__)
+
 
 class PathItem(Serializable):
     def __init__(

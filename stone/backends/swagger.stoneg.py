@@ -80,7 +80,7 @@ class SwaggerBackend(CodeBackend):
     def _generate_operation(self, ctx, route, namespace):
         # type: (Context, ApiRoute, ApiNamespace) -> Operation
         summary, description = self._split_doc(route.doc) if route.doc else ('', None)
-        summary = route.name + ': ' + summary
+        summary = '/' + namespace.name + '/' + route.name + ': ' + summary
         parameters = self._generate_parameters(ctx, route)
         responses = self._generate_responses(ctx, route)
         operation_id = namespace.name + '-' + route.name.replace('/', '-')

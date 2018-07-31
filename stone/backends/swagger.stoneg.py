@@ -1,5 +1,6 @@
 import argparse
 import json
+import re
 
 from typing import Dict, Text, Union, List, Optional, Tuple
 
@@ -13,6 +14,7 @@ from stone.backends.swagger_objects import Swagger, Info, Paths, PathItem, Opera
     Responses, Response, Parameter, Definitions
 
 SWAGGER_VERSION = '2.0'
+SPLIT_DOC_REGEX = re.compile(r'(.*?)\.(?:[^\w\d]|$)(.*)', flags=re.MULTILINE | re.DOTALL)
 
 _cmdline_parser = argparse.ArgumentParser()
 _cmdline_parser.add_argument('-r', '--rock', required=True, help='Input rock file.')
@@ -204,9 +206,8 @@ class SwaggerBackend(CodeBackend):
 
     def _split_doc(self, doc):
         # type: (Text) -> Tuple[Text, Text]
-        pos = doc.find('. ')
-        if pos == -1:
-            pos = doc.find('.\n')
-        if pos == -1:
+        match = SPLIT_DOC_REGEX.match(doc)
+        if match:
+            return match.group(1), match.group(2)
+        else:
             return doc, ''
-        return doc[:pos], doc[pos+2:]

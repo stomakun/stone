@@ -12,7 +12,7 @@ from stone.ir import Api, ApiNamespace, ApiRoute, DataType, is_primitive_type, i
     UserDefined, is_union_type, is_user_defined_type, Struct, Union as StoneUnion
 from stone.backend import CodeBackend
 from stone.backends.swagger_objects import Swagger, Info, Paths, PathItem, Operation, Schema, Reference, \
-    Responses, Response, Parameter, Definitions
+    Responses, Response, Parameter, Definitions, ParametersDefinitions
 
 SWAGGER_VERSION = '2.0'
 SPLIT_DOC_REGEX = re.compile(r'(.*?)\.(?:[^\w\d]|$)(.*)', flags=re.MULTILINE | re.DOTALL)
@@ -63,14 +63,24 @@ class SwaggerBackend(CodeBackend):
         produces = ctx.rock.swagger.produces
         host = ctx.rock.swagger.host
         base_path = ctx.rock.swagger.base_path
+        parameters = self._generate_parameters_object(ctx)
         swagger = Swagger(SWAGGER_VERSION, info, paths, consumes=consumes, produces=produces, definitions=definitions,
-                          host=host, basePath=base_path)
+                          parameters=parameters, host=host, basePath=base_path)
         return swagger
 
     def _generate_info(self, info):
         # type: (RocksInfo) -> Info
         info = Info(info.title, info.version, description=info.description)
         return info
+
+    def _generate_parameters_object(self, ctx):
+        # type: (Context) -> ParametersDefinitions
+        parameters = {}  # type: Dict[Text, Parameter]
+        for (param_name, param_def) in ctx.rock.swagger.parameters.items():
+            parameter = Parameter(name=param_def.name, inParam=param_def.in_param, description=param_def.description,
+                                  required=param_def.required, type=param_def.type)
+            parameters[param_name] = parameter
+        return ParametersDefinitions(parameters)
 
     def _generate_paths(self, ctx, namespace):
         # type: (Context, ApiNamespace) -> Paths
@@ -90,20 +100,20 @@ class SwaggerBackend(CodeBackend):
         # type: (Context, ApiRoute, Text) -> Operation
         summary = fmt_path(fq_path)
         description = route.doc
-        parameters = self._generate_parameters(ctx, route)
+        parameters = self._generate_parameters(ctx, route, fq_path)
         responses = self._generate_responses(ctx, route)
         operation_id = fmt_pascal(fq_path)
         operation = Operation(responses, summary=summary, description=description, parameters=parameters, operationId=operation_id)
         return operation
 
-    def _generate_parameters(self, ctx, route):
-        # type: (Context, ApiRoute) -> Optional[List[Parameter]]
+    def _generate_parameters(self, ctx, route, fq_path):
+        # type: (Context, ApiRoute, Text) -> List[Union[Parameter, Reference]]
         schema = self._generate_for_datatype(ctx, route.arg_data_type)
-        parameter = Parameter('body', 'body', schema=schema)
-        # This is how I added the header for admins to assume users.
-        # team_member_parameter = Parameter('Dropbox-API-Select-User', inParam='header', type='string')
-        # return [parameter, team_member_parameter]
-        return [parameter]
+        parameters = [Parameter('body', 'body', schema=schema)]  # type: List[Union[Parameter, Reference]]
+        for (pattern, parameter_name) in ctx.rock.parameters.items():
+            if re.match(pattern, fq_path):
+                parameters.append(self._generate_reference_for_parameter(parameter_name))
+        return parameters
 
     def _generate_for_datatype(self, ctx, data_type):
         # type: (Context, DataType) -> Union[Schema, Reference]
@@ -117,7 +127,7 @@ class SwaggerBackend(CodeBackend):
             assert is_user_defined_type(data_type), "unknown field data_type %s" % data_type
             if data_type.name not in ctx.schemas:
                 ctx.schemas[data_type.name] = self._generate_user_defined_schema(ctx, data_type)
-            schema = self._generate_reference(data_type)
+            schema = self._generate_reference_for_datatype(data_type)
         return schema
 
     def _generate_responses(self, ctx, route):
@@ -197,6 +207,10 @@ class SwaggerBackend(CodeBackend):
         self.logger.warning('unknown primitive data_type %s' % format(data_type.name))
         return 'object'
 
-    def _generate_reference(self, data_type):
+    def _generate_reference_for_datatype(self, data_type):
         # type: (DataType) -> Reference
         return Reference('#/definitions/' + data_type.name)
+
+    def _generate_reference_for_parameter(self, parameter_name):
+        # type: (Text) -> Reference
+        return Reference('#/parameters/' + parameter_name)

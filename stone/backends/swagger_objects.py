@@ -29,6 +29,7 @@ class Swagger(Serializable):
             consumes=None,      # type: Optional[List[Text]]
             produces=None,      # type: Optional[List[Text]]
             definitions=None,   # type: Optional[Definitions]
+            parameters=None,    # type: Optional[ParametersDefinitions]
             security=None,      # type: Optional[SecurityRequirement]
             tags=None,          # type: Optional[Tag]
             externalDocs=None,  # type: Optional[ExternalDocumentation]
@@ -43,6 +44,7 @@ class Swagger(Serializable):
         self.consumes = consumes
         self.produces = produces
         self.definitions = definitions
+        self.parameters = parameters
         self.security = security
         self.tags = tags
         self.externalDocs = externalDocs
@@ -334,6 +336,15 @@ class Definitions(Serializable):
     ):
         super(Definitions, self).__init__()
         self.__dict__.update(schemas)
+
+
+class ParametersDefinitions(Serializable):
+    def __init__(
+            self,
+            parameters,    # type: Dict[Text, Parameter]
+    ):
+        super(ParametersDefinitions, self).__init__()
+        self.__dict__.update(parameters)
 
 
 class SecurityScheme(Serializable):

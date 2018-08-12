@@ -22,7 +22,7 @@ struct Info
 
 struct Parameter
     name            String
-    in              String
+    in_param        String
     description     String?
     required        Boolean?
     type            String

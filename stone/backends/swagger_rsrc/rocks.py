@@ -117,6 +117,172 @@ class Info(object):
 
 Info_validator = bv.Struct(Info)
 
+class Parameter(object):
+
+    __slots__ = [
+        '_name_value',
+        '_name_present',
+        '_in_param_value',
+        '_in_param_present',
+        '_description_value',
+        '_description_present',
+        '_required_value',
+        '_required_present',
+        '_type_value',
+        '_type_present',
+    ]
+
+    _has_required_fields = True
+
+    def __init__(self,
+                 name=None,
+                 in_param=None,
+                 type=None,
+                 description=None,
+                 required=None):
+        self._name_value = None
+        self._name_present = False
+        self._in_param_value = None
+        self._in_param_present = False
+        self._description_value = None
+        self._description_present = False
+        self._required_value = None
+        self._required_present = False
+        self._type_value = None
+        self._type_present = False
+        if name is not None:
+            self.name = name
+        if in_param is not None:
+            self.in_param = in_param
+        if description is not None:
+            self.description = description
+        if required is not None:
+            self.required = required
+        if type is not None:
+            self.type = type
+
+    @property
+    def name(self):
+        """
+        :rtype: str
+        """
+        if self._name_present:
+            return self._name_value
+        else:
+            raise AttributeError("missing required field 'name'")
+
+    @name.setter
+    def name(self, val):
+        val = self._name_validator.validate(val)
+        self._name_value = val
+        self._name_present = True
+
+    @name.deleter
+    def name(self):
+        self._name_value = None
+        self._name_present = False
+
+    @property
+    def in_param(self):
+        """
+        :rtype: str
+        """
+        if self._in_param_present:
+            return self._in_param_value
+        else:
+            raise AttributeError("missing required field 'in_param'")
+
+    @in_param.setter
+    def in_param(self, val):
+        val = self._in_param_validator.validate(val)
+        self._in_param_value = val
+        self._in_param_present = True
+
+    @in_param.deleter
+    def in_param(self):
+        self._in_param_value = None
+        self._in_param_present = False
+
+    @property
+    def description(self):
+        """
+        :rtype: str
+        """
+        if self._description_present:
+            return self._description_value
+        else:
+            return None
+
+    @description.setter
+    def description(self, val):
+        if val is None:
+            del self.description
+            return
+        val = self._description_validator.validate(val)
+        self._description_value = val
+        self._description_present = True
+
+    @description.deleter
+    def description(self):
+        self._description_value = None
+        self._description_present = False
+
+    @property
+    def required(self):
+        """
+        :rtype: bool
+        """
+        if self._required_present:
+            return self._required_value
+        else:
+            return None
+
+    @required.setter
+    def required(self, val):
+        if val is None:
+            del self.required
+            return
+        val = self._required_validator.validate(val)
+        self._required_value = val
+        self._required_present = True
+
+    @required.deleter
+    def required(self):
+        self._required_value = None
+        self._required_present = False
+
+    @property
+    def type(self):
+        """
+        :rtype: str
+        """
+        if self._type_present:
+            return self._type_value
+        else:
+            raise AttributeError("missing required field 'type'")
+
+    @type.setter
+    def type(self, val):
+        val = self._type_validator.validate(val)
+        self._type_value = val
+        self._type_present = True
+
+    @type.deleter
+    def type(self):
+        self._type_value = None
+        self._type_present = False
+
+    def __repr__(self):
+        return 'Parameter(name={!r}, in_param={!r}, type={!r}, description={!r}, required={!r})'.format(
+            self._name_value,
+            self._in_param_value,
+            self._type_value,
+            self._description_value,
+            self._required_value,
+        )
+
+Parameter_validator = bv.Struct(Parameter)
+
 class Rock(object):
 
     __slots__ = [
@@ -126,6 +292,8 @@ class Rock(object):
         '_namespaces_present',
         '_swagger_value',
         '_swagger_present',
+        '_parameters_value',
+        '_parameters_present',
     ]
 
     _has_required_fields = True
@@ -133,19 +301,24 @@ class Rock(object):
     def __init__(self,
                  name=None,
                  namespaces=None,
-                 swagger=None):
+                 swagger=None,
+                 parameters=None):
         self._name_value = None
         self._name_present = False
         self._namespaces_value = None
         self._namespaces_present = False
         self._swagger_value = None
         self._swagger_present = False
+        self._parameters_value = None
+        self._parameters_present = False
         if name is not None:
             self.name = name
         if namespaces is not None:
             self.namespaces = namespaces
         if swagger is not None:
             self.swagger = swagger
+        if parameters is not None:
+            self.parameters = parameters
 
     @property
     def name(self):
@@ -210,11 +383,33 @@ class Rock(object):
         self._swagger_value = None
         self._swagger_present = False
 
+    @property
+    def parameters(self):
+        """
+        :rtype: dict of [str:str]
+        """
+        if self._parameters_present:
+            return self._parameters_value
+        else:
+            raise AttributeError("missing required field 'parameters'")
+
+    @parameters.setter
+    def parameters(self, val):
+        val = self._parameters_validator.validate(val)
+        self._parameters_value = val
+        self._parameters_present = True
+
+    @parameters.deleter
+    def parameters(self):
+        self._parameters_value = None
+        self._parameters_present = False
+
     def __repr__(self):
-        return 'Rock(name={!r}, namespaces={!r}, swagger={!r})'.format(
+        return 'Rock(name={!r}, namespaces={!r}, swagger={!r}, parameters={!r})'.format(
             self._name_value,
             self._namespaces_value,
             self._swagger_value,
+            self._parameters_value,
         )
 
 Rock_validator = bv.Struct(Rock)
@@ -234,6 +429,8 @@ class Swagger(object):
         '_consumes_present',
         '_produces_value',
         '_produces_present',
+        '_parameters_value',
+        '_parameters_present',
     ]
 
     _has_required_fields = True
@@ -244,7 +441,8 @@ class Swagger(object):
                  base_path=None,
                  schemes=None,
                  consumes=None,
-                 produces=None):
+                 produces=None,
+                 parameters=None):
         self._info_value = None
         self._info_present = False
         self._host_value = None
@@ -257,6 +455,8 @@ class Swagger(object):
         self._consumes_present = False
         self._produces_value = None
         self._produces_present = False
+        self._parameters_value = None
+        self._parameters_present = False
         if info is not None:
             self.info = info
         if host is not None:
@@ -269,6 +469,8 @@ class Swagger(object):
             self.consumes = consumes
         if produces is not None:
             self.produces = produces
+        if parameters is not None:
+            self.parameters = parameters
 
     @property
     def info(self):
@@ -411,14 +613,39 @@ class Swagger(object):
         self._produces_value = None
         self._produces_present = False
 
+    @property
+    def parameters(self):
+        """
+        :rtype: dict of [str:Parameter]
+        """
+        if self._parameters_present:
+            return self._parameters_value
+        else:
+            return None
+
+    @parameters.setter
+    def parameters(self, val):
+        if val is None:
+            del self.parameters
+            return
+        val = self._parameters_validator.validate(val)
+        self._parameters_value = val
+        self._parameters_present = True
+
+    @parameters.deleter
+    def parameters(self):
+        self._parameters_value = None
+        self._parameters_present = False
+
     def __repr__(self):
-        return 'Swagger(info={!r}, host={!r}, base_path={!r}, schemes={!r}, consumes={!r}, produces={!r})'.format(
+        return 'Swagger(info={!r}, host={!r}, base_path={!r}, schemes={!r}, consumes={!r}, produces={!r}, parameters={!r})'.format(
             self._info_value,
             self._host_value,
             self._base_path_value,
             self._schemes_value,
             self._consumes_value,
             self._produces_value,
+            self._parameters_value,
         )
 
 Swagger_validator = bv.Struct(Swagger)
@@ -437,18 +664,41 @@ Info._all_fields_ = [
     ('version', Info._version_validator),
 ]
 
+Parameter._name_validator = bv.String()
+Parameter._in_param_validator = bv.String()
+Parameter._description_validator = bv.Nullable(bv.String())
+Parameter._required_validator = bv.Nullable(bv.Boolean())
+Parameter._type_validator = bv.String()
+Parameter._all_field_names_ = set([
+    'name',
+    'in_param',
+    'description',
+    'required',
+    'type',
+])
+Parameter._all_fields_ = [
+    ('name', Parameter._name_validator),
+    ('in_param', Parameter._in_param_validator),
+    ('description', Parameter._description_validator),
+    ('required', Parameter._required_validator),
+    ('type', Parameter._type_validator),
+]
+
 Rock._name_validator = bv.String()
 Rock._namespaces_validator = bv.List(bv.String())
 Rock._swagger_validator = Swagger_validator
+Rock._parameters_validator = bv.Map(bv.String(), bv.String())
 Rock._all_field_names_ = set([
     'name',
     'namespaces',
     'swagger',
+    'parameters',
 ])
 Rock._all_fields_ = [
     ('name', Rock._name_validator),
     ('namespaces', Rock._namespaces_validator),
     ('swagger', Rock._swagger_validator),
+    ('parameters', Rock._parameters_validator),
 ]
 
 Swagger._info_validator = Info_validator
@@ -457,6 +707,7 @@ Swagger._base_path_validator = bv.Nullable(bv.String())
 Swagger._schemes_validator = bv.Nullable(bv.List(bv.String()))
 Swagger._consumes_validator = bv.Nullable(bv.List(bv.String()))
 Swagger._produces_validator = bv.Nullable(bv.List(bv.String()))
+Swagger._parameters_validator = bv.Nullable(bv.Map(bv.String(), Parameter_validator))
 Swagger._all_field_names_ = set([
     'info',
     'host',
@@ -464,6 +715,7 @@ Swagger._all_field_names_ = set([
     'schemes',
     'consumes',
     'produces',
+    'parameters',
 ])
 Swagger._all_fields_ = [
     ('info', Swagger._info_validator),
@@ -472,6 +724,7 @@ Swagger._all_fields_ = [
     ('schemes', Swagger._schemes_validator),
     ('consumes', Swagger._consumes_validator),
     ('produces', Swagger._produces_validator),
+    ('parameters', Swagger._parameters_validator),
 ]
 
 ROUTES = {

@@ -2,8 +2,9 @@ import argparse
 import json
 import re
 
-from typing import Dict, Text, Union, List, Optional, Tuple
+from typing import Dict, Text, Union, List, Optional
 
+from stone.backends.helpers import split_words, fmt_pascal
 from stone.backends.swagger_rsrc import stone_serializers
 from stone.backends.swagger_rsrc.rocks import Rock_validator, Rock, Info as RocksInfo
 from stone.ir import Api, ApiNamespace, ApiRoute, DataType, is_primitive_type, is_boolean_type, is_list_type, \
@@ -18,6 +19,14 @@ SPLIT_DOC_REGEX = re.compile(r'(.*?)\.(?:[^\w\d]|$)(.*)', flags=re.MULTILINE | r
 
 _cmdline_parser = argparse.ArgumentParser()
 _cmdline_parser.add_argument('-r', '--rock', required=True, help='Input rock file.')
+
+
+def fmt_path(name):
+    # type: (Text) -> Text
+    parts = [' '.join(
+        [word.capitalize() for word in split_words(part) if word.strip()]
+    ) for part in name.split('/') if part.strip()]
+    return ' - '.join(parts)
 
 
 class Context(object):
@@ -65,25 +74,25 @@ class SwaggerBackend(CodeBackend):
 
     def _generate_paths(self, ctx, namespace):
         # type: (Context, ApiNamespace) -> Paths
-        paths = {
-            '/' + namespace.name + '/' + route.name: self._generate_path_item(ctx, route, namespace)
-            for route in namespace.routes
-        }
+        paths = {}  # type: Dict[Text, PathItem]
+        for route in namespace.routes:
+            fq_path = '/' + namespace.name + '/' + route.name
+            paths[fq_path] = self._generate_path_item(ctx, route, fq_path)
         return Paths(paths)
 
-    def _generate_path_item(self, ctx, route, namespace):
-        # type: (Context, ApiRoute, ApiNamespace) -> PathItem
-        post = self._generate_operation(ctx, route, namespace)
+    def _generate_path_item(self, ctx, route, fq_path):
+        # type: (Context, ApiRoute, Text) -> PathItem
+        post = self._generate_operation(ctx, route, fq_path)
         path_item = PathItem(post=post)
         return path_item
 
-    def _generate_operation(self, ctx, route, namespace):
-        # type: (Context, ApiRoute, ApiNamespace) -> Operation
-        summary, description = self._split_doc(route.doc) if route.doc else ('', None)
-        summary = '/' + namespace.name + '/' + route.name + ': ' + summary
+    def _generate_operation(self, ctx, route, fq_path):
+        # type: (Context, ApiRoute, Text) -> Operation
+        summary = fmt_path(fq_path)
+        description = route.doc
         parameters = self._generate_parameters(ctx, route)
         responses = self._generate_responses(ctx, route)
-        operation_id = namespace.name + '-' + route.name.replace('/', '-')
+        operation_id = fmt_pascal(fq_path)
         operation = Operation(responses, summary=summary, description=description, parameters=parameters, operationId=operation_id)
         return operation
 
@@ -126,18 +135,6 @@ class SwaggerBackend(CodeBackend):
         definitions = Definitions(schemas=ctx.schemas)
         return definitions
 
-    def _get_all_namespaces(self, namespace):
-        # type: (ApiNamespace) -> List[ApiNamespace]
-        namespaces = {namespace.name: namespace}
-        stack = [namespace]
-        while len(stack) > 0:
-            current = stack.pop()
-            for imported in current.get_imported_namespaces():
-                if imported.name not in namespaces:
-                    namespaces[imported.name] = imported
-                    stack.append(imported)
-        return list(namespaces.values())
-
     def _generate_user_defined_schema(self, ctx, data_type):
         # type: (Context, UserDefined) -> Schema
         if is_struct_type(data_type):
@@ -151,10 +148,10 @@ class SwaggerBackend(CodeBackend):
     def _generate_from_union(self, ctx, data_type):
         # type: (Context, StoneUnion) -> Schema
         own_properties = {}  # type: Dict[Text, Union[Schema, Reference]]
-        description = data_type.doc or ''
+        description = data_type.doc + '\n' if data_type.doc else ''
         choices = []  # type: List[Text]
         for field in data_type.all_fields:
-            description += '\n%s: %s' % (field.name, field.doc)
+            description += '%s: %s\n' % (field.name, field.doc)
             choices.append(field.name)
             if is_void_type(field.data_type):
                 continue
@@ -169,9 +166,9 @@ class SwaggerBackend(CodeBackend):
     def _generate_from_struct(self, ctx, data_type):
         # type: (Context, Struct) -> Schema
         own_properties = {}  # type: Dict[Text, Union[Schema, Reference]]
-        description = data_type.doc or ''
+        description = data_type.doc + '\n' if data_type.doc else ''
         for field in data_type.all_fields:
-            description += '\n%s: %s' % (field.name, field.doc)
+            description += '%s: %s\n' % (field.name, field.doc)
             property = self._generate_for_datatype(ctx, field.data_type)
             if isinstance(property, Schema):
                 property.description = field.doc
@@ -203,11 +200,3 @@ class SwaggerBackend(CodeBackend):
     def _generate_reference(self, data_type):
         # type: (DataType) -> Reference
         return Reference('#/definitions/' + data_type.name)
-
-    def _split_doc(self, doc):
-        # type: (Text) -> Tuple[Text, Text]
-        match = SPLIT_DOC_REGEX.match(doc)
-        if match:
-            return match.group(1), match.group(2)
-        else:
-            return doc, ''

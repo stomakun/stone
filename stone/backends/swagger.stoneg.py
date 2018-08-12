@@ -169,7 +169,7 @@ class SwaggerBackend(CodeBackend):
             if isinstance(property, Schema):
                 property.description = field.doc
             own_properties[field.name] = property
-        own_properties['.tag'] = Schema(type='string', enum=choices, title='Union type of ' + data_type.name)
+        own_properties['.tag'] = Schema(type='string', enum=choices, title='Choice of ' + data_type.name)
         schema = Schema(type='object', properties=own_properties, description=description)
         return schema
 

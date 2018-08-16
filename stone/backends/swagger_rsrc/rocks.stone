@@ -4,7 +4,7 @@ struct Rock
     name            String
     namespaces      List(String)
     swagger         Swagger
-    parameters      Map(String, String)
+    parameters      Map(String, String)?
 
 struct Swagger
     info            Info

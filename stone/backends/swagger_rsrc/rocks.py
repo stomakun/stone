@@ -391,10 +391,13 @@ class Rock(object):
         if self._parameters_present:
             return self._parameters_value
         else:
-            raise AttributeError("missing required field 'parameters'")
+            return None
 
     @parameters.setter
     def parameters(self, val):
+        if val is None:
+            del self.parameters
+            return
         val = self._parameters_validator.validate(val)
         self._parameters_value = val
         self._parameters_present = True
@@ -687,7 +690,7 @@ Parameter._all_fields_ = [
 Rock._name_validator = bv.String()
 Rock._namespaces_validator = bv.List(bv.String())
 Rock._swagger_validator = Swagger_validator
-Rock._parameters_validator = bv.Map(bv.String(), bv.String())
+Rock._parameters_validator = bv.Nullable(bv.Map(bv.String(), bv.String()))
 Rock._all_field_names_ = set([
     'name',
     'namespaces',

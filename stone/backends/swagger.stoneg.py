@@ -74,7 +74,9 @@ class SwaggerBackend(CodeBackend):
         return info
 
     def _generate_parameters_object(self, ctx):
-        # type: (Context) -> ParametersDefinitions
+        # type: (Context) -> Optional[ParametersDefinitions]
+        if ctx.rock.swagger.parameters is None:
+            return None
         parameters = {}  # type: Dict[Text, Parameter]
         for (param_name, param_def) in ctx.rock.swagger.parameters.items():
             parameter = Parameter(name=param_def.name, inParam=param_def.in_param, description=param_def.description,
@@ -110,9 +112,10 @@ class SwaggerBackend(CodeBackend):
         # type: (Context, ApiRoute, Text) -> List[Union[Parameter, Reference]]
         schema = self._generate_for_datatype(ctx, route.arg_data_type)
         parameters = [Parameter('body', 'body', schema=schema)]  # type: List[Union[Parameter, Reference]]
-        for (pattern, parameter_name) in ctx.rock.parameters.items():
-            if re.match(pattern, fq_path):
-                parameters.append(self._generate_reference_for_parameter(parameter_name))
+        if ctx.rock.parameters is not None:
+            for (pattern, parameter_name) in ctx.rock.parameters.items():
+                if re.match(pattern, fq_path):
+                    parameters.append(self._generate_reference_for_parameter(parameter_name))
         return parameters
 
     def _generate_for_datatype(self, ctx, data_type):
